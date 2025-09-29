@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Весёлый или Злой</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@2.0.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.4"></script>
+  <style>
+    body {
+      margin:0; font-family:sans-serif; background:#121212; color:#fff;
+      display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
+      height:100vh;
+    }
+    header {
+      padding:15px; font-size:22px; font-weight:bold; background:#1e1e1e; width:100%; text-align:center;
+    }
+    main { flex:1; width:100%; max-width:500px; padding:20px; }
+    .card {
+      background:#1f1f1f; border-radius:16px; padding:20px; margin-bottom:20px;
+      box-shadow:0 4px 10px rgba(0,0,0,0.5);
+    }
+    button, input[type=file] {
+      appearance:none; border:none; border-radius:12px; padding:14px 20px;
+      font-size:16px; margin:6px 0; width:100%;
+      background:#ff9800; color:white; cursor:pointer;
+    }
+    video, img {
+      max-width:100%; border-radius:12px; margin-top:12px;
+    }
+    #result-box {
+      display:none; text-align:center; padding:16px;
+    }
+    #emoji { font-size:80px; }
+    #result-text { font-size:26px; font-weight:bold; margin-top:10px; }
+    #confidence { font-size:18px; margin-top:6px; }
+    table { width:100%; margin-top:12px; border-collapse:collapse; }
+    th, td {
+      padding:8px; border:1px solid rgba(255,255,255,0.1); text-align:center;
+    }
+    tr.best { background:rgba(0,255,0,0.15); }
+    tr.angry.best { background:rgba(255,0,0,0.2); }
+  </style>
+</head>
+<body>
+  <header>🤖 Весёлый или Злой</header>
+  <main>
+    <div class="card">
+      <h3>📂 Загрузить фото</h3>
+      <input type="file" id="fileInput" accept="image/*">
+      <button id="predictBtn" style="display:none">▶️ Определить</button>
+      <div id="image-container"></div>
+    </div>
+
+    <div class="card">
+      <h3>📷 Камера</h3>
+      <button id="startCamBtn">Запустить камеру</button>
+      <video id="webcam" autoplay playsinline muted width="100%" style="display:none"></video>
+    </div>
+
+    <div class="card" id="result-box">
+      <div id="emoji">🙂</div>
+      <div id="result-text">Результат</div>
+      <div id="confidence"></div>
+      <table>
+        <thead><tr><th>Класс</th><th>Уверенность</th></tr></thead>
+        <tbody id="results-tbody"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <script>
+    const MODEL_URL = "https://teachablemachine.withgoogle.com/models/UG7HakWXG/";
+    let model, webcamStream, uploadedImage;
+
+    const fileInput = document.getElementById('fileInput');
+    const predictBtn = document.getElementById('predictBtn');
+    const startCamBtn = document.getElementById('startCamBtn');
+    const webcam = document.getElementById('webcam');
+    const imageContainer = document.getElementById('image-container');
+    const resultBox = document.getElementById('result-box');
+    const emojiEl = document.getElementById('emoji');
+    const resultText = document.getElementById('result-text');
+    const confidenceEl = document.getElementById('confidence');
+    const resultsTbody = document.getElementById('results-tbody');
+
+    async function loadModel() {
+      if (model) return;
+      model = await tmImage.load(MODEL_URL + "model.json", MODEL_URL + "metadata.json");
+      console.log("✅ Модель загружена");
+    }
+
+    function showResults(predictions) {
+      predictions.sort((a,b)=>b.probability-a.probability);
+      const best = predictions[0];
+
+      resultsTbody.innerHTML = '';
+      predictions.forEach((p, idx) => {
+        const tr = document.createElement('tr');
+        if (idx===0) {
+          tr.classList.add('best');
+          if (p.className.toLowerCase().includes('злой')) tr.classList.add('angry');
+        }
+        tr.innerHTML = `<td>${p.className}</td><td>${(p.probability*100).toFixed(1)}%</td>`;
+        resultsTbody.appendChild(tr);
+      });
+
+      if (best.className.toLowerCase().includes('вес')) {
+        emojiEl.textContent = "😊";
+        resultText.textContent = "Весёлый человек";
+      } else if (best.className.toLowerCase().includes('злой')) {
+        emojiEl.textContent = "😠";
+        resultText.textContent = "Злой человек";
+      } else {
+        emojiEl.textContent = "🤔";
+        resultText.textContent = "Неопределено";
+      }
+
+      confidenceEl.textContent = "Уверенность: " + (best.probability*100).toFixed(1) + "%";
+      resultBox.style.display = "block";
+    }
+
+    fileInput.addEventListener('change', async e => {
+      await loadModel();
+      const file = e.target.files[0];
+      if (!file) return;
+      const img = document.createElement('img');
+      img.src = URL.createObjectURL(file);
+      uploadedImage = img;
+      imageContainer.innerHTML = '';
+      imageContainer.appendChild(img);
+      predictBtn.style.display = 'block';
+    });
+
+    predictBtn.addEventListener('click', async () => {
+      if (!uploadedImage) return;
+      const preds = await model.predict(uploadedImage);
+      showResults(preds);
+    });
+
+    startCamBtn.addEventListener('click', async () => {
+      await loadModel();
+      if (!webcamStream) {
+        webcam.style.display = 'block';
+        webcamStream = await navigator.mediaDevices.getUserMedia({ video:true });
+        webcam.srcObject = webcamStream;
+        loop();
+      }
+    });
+
+    async function loop() {
+      if (model && webcamStream) {
+        const preds = await model.predict(webcam);
+        showResults(preds);
+      }
+      requestAnimationFrame(loop);
+    }
+  </script>
+</body>
+</html>
